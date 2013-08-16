@@ -1,0 +1,66 @@
+Threads::Pool is Copyright (C) 2013, Francesco Serra
+
+NAME
+    "Threads::Pool" - API to get a Pool of reusable threads
+
+SYNOPSIS
+            my $pool = Threads::Pool->getInstance( [[NUMBER OF THREADS, SUB CODEREF], WAIT SECONDS] );
+            $pool->addToTheQueue( \@array );
+            $pool->destroy();
+
+DESCRIPTION
+    This class instances a pool of reusable threads, gives them a task, and
+    then adds to a shared queue any $obj you want to give them to evaluate.
+    Your $obj MUST be shareable ( look for which kinds are allowed in perl's
+    documentation ) and shared before being added to the queue ( or at least
+    serialized, so that you can then deserialize it inside the SUB CODEREF
+    you supplied ), and put in an ARRAYREF ( mandatory ). You must also supply
+    the number of threads you want to be run inside the pool at creation
+    time. Optionally you can give a wait time for the threads to wait
+    between executions of the coderef, defaults to 0.3 seconds.
+
+    You can call the pool's instance from wherever in your code, passing as
+    argument always the same CODEREF, as it's a static member of this
+    class; once the instance is created, every attempt to recreate it will
+    just be ignored, so you need to destroy it ( via ->destroy() ) before
+    doing it.
+
+    The pool can't give you any assurance that all the threads will get
+    their jobs finished before exiting the main program, so you MUST ensure
+    that they'll have enough time to run ( if you care ). It's thus
+    advisable that you destroy() the pool when you're done. Otherwise perl
+    will most probably complain that you still have running threads while
+    exiting ( mostly if you've got more than a pool at once in the same
+    scope, as the references are statically kept by the class itself, so that
+    no automagic cleanup method will be invoked ), although the pool will do
+    its best to kill them beforehand.
+
+    Requires at least Perl 5.8.0 and the support to ithreads, with the 
+    presence of the threads and threads::shared modules.
+
+METHODS
+  "getInstance( [[NUMBER OF THREADS, SUB CODEREF], WAIT SECONDS] )"
+    This method returns the pool's instance, if already created, or creates
+    it with arguments you pass;
+
+  "addToTheQueue( $obj )"
+    This method lets you add the args you want to be passed to the coderef
+    by the threads. This must be an ARRAYREF to a previously SHARED array.
+
+  "destroy()"
+    This method destroies the pool's instance, waiting for all the threads
+    to have their jobs done.
+
+SUPPORT
+    No support is available
+
+AUTHOR
+    Francesco Serra, fn.serra@gmail.com
+
+    Copyright 2013.
+
+LICENSE INFORMATION
+This library is free software; you can redistribute it and/or modify it under 
+the terms of the can redistribute it and/or modify it under the terms of the
+GPL License 3.0. For details, see the full text of the license in the file 
+LICENSE.

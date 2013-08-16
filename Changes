@@ -1,0 +1,4 @@
+#    Rev.       : 0.2   - bug fixes
+#    Rev.       : 0.3   - added thread signaling
+#    Rev.       : 0.4   - minor bug fixes and better code usability
+#    Rev.       : 0.5   - added the ability to have multiple pools within the same scope, each identified by its own CODE block

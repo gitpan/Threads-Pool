@@ -1,0 +1,7 @@
+Changes
+lib/Threads/Pool.pm
+LICENSE
+Makefile.PL
+MANIFEST			This list of files
+README
+t/test.t
