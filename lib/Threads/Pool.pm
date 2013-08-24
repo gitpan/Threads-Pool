@@ -1,7 +1,7 @@
 package Threads::Pool;
 
-#    Â©2013 - Francesco Serra fn.serra@gmail.com
-#    Â©2013 - Frozen Stone Dev.
+#    ©2013 - Francesco Serra fn.serra@gmail.com
+#    ©2013 - Frozen Stone Dev.
 # 
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@ This method lets you add the args you want to be passed to the coderef by the th
 
 =head2 C<destroy()>
 
-This method destroies the pool's instance, waiting for all the threads to have their jobs done.
+This method destroys the pool's instance, waiting for all the threads to have their jobs done.
 
 =cut
 
@@ -72,12 +72,9 @@ use threads::shared;
 use Carp;
 use 5.8.0;
 
-our $VERSION = 0.5;
+our $VERSION = 0.6;
 
 my %instance;									####### Global instance which will be returned every time the constructor's called
-### my @queue : shared;								####### Queue of tasks accomplished by the threads
-### my $job;									####### The task every thread must accomplish
-### my $waitTime;
 
 ### Private method : this is the 'core' of each thread
 my $_threadRun = sub {
@@ -85,12 +82,13 @@ my $_threadRun = sub {
 	my $job = shift;
 	my $queue = shift;
 	my $waitTime = shift;
+	my $sem = shift;
 
 	my $ON_THREAD_DESTROY = 0;
 
 	local $SIG{'KILL'} = sub { $ON_THREAD_DESTROY = 1; };
 
-        while ( ! $ON_THREAD_DESTROY ) {
+        while ( ! $ON_THREAD_DESTROY && ! ${ $sem } ) {
 
                 if ( ( @{ $queue } ) && ( scalar( @{ $queue } ) > 0 ) ) {
 
@@ -98,7 +96,7 @@ my $_threadRun = sub {
 
                         {
 
-                                lock( @{ $queue } );
+                                lock( $queue );
                                 $item = shift @{ $queue };
 
                         }
@@ -152,10 +150,12 @@ sub getInstance() {
 		$instance{ $job } = bless {}, $class;
 
 		my @queue : shared;
+		my $sem : shared = 0;
 
 		$instance{ $job }->{ job } = $job;
 		$instance{ $job }->{ pool } = [];
 		$instance{ $job }->{ queue } = \@queue;
+		$instance{ $job }->{ sem } = \$sem;					###### Add a semaphore, just in case signaling is not functional
 		
 		for ( my $i = 0 ; $i < $numberOfThreads ; ++$i ) {
 
@@ -164,7 +164,8 @@ sub getInstance() {
 							$_threadRun, 
 							$job, 
 							$instance{ $job }->{ queue }, 		 
-							$waitTime 
+							$waitTime,
+							\$sem
 						); 				
 
 		}
@@ -192,7 +193,7 @@ sub addToTheQueue( $ ) {
 
 	}
 
-	my $item : shared = shift || croak "You have to give your argument!";
+	my $item = shift || croak "You have to give your argument!";
 
 	unless ( ref( $item ) eq 'ARRAY' ) {
 
@@ -200,11 +201,16 @@ sub addToTheQueue( $ ) {
 
 	}
 
+	my @local_array : shared = @{ $item };
 
-	if ( defined( $item ) ) {
+	if ( scalar( @local_array ) > 0 ) {
 
-		lock( @{ $self->{ queue } } );
-		push( @{ $self->{ queue } }, $item );
+		lock( $self->{ queue } );
+		push( @{ $self->{ queue } }, \@local_array );
+
+	} else {
+
+		carp "Your argument cannot be empty!";
 
 	}
 
@@ -222,15 +228,20 @@ sub destroy() {
 
 		eval {
 
-			my $tid = $t->tid;
 			$t->kill('KILL');						####### Sending the KILL signal to the threads
-                	$t->join();	
+			$t->join();
 
 		};
 
-		carp "Unable to kill a thread. Already shut down?" if $@;
+		if ( $@ ) {
+
+			$t->detach();							####### Will detach, if we couldn't signal
+
+		}
 
 	}
+
+	${ $self->{ sem } } = 1;                                                        ####### We should be able to manually adjust everything...
 
 	eval {
 
@@ -240,7 +251,7 @@ sub destroy() {
 
 	eval {
 	
-		$instance{ $self->{ job } } = undef if exists( $instance{ $self->{ job } } );				####### from now on, you're on your own.
+		$instance{ $self->{ job } } = undef if exists( $instance{ $self->{ job } } );		####### from now on, you're on your own.
 
 	};
 
@@ -253,14 +264,26 @@ sub destroy() {
 
 sub DESTROY {
 
-	my $self;
+	my $self = shift;
 	
+	local $@;
+
 	for ( @{ $self->{ pool } } ) {
-											####### Just make sure everything gets tidy up before leaving 
-		$_->kill('KILL');							####### if we make to catch up before the instance is gone. Note that this will
-		$_->detach();								####### be invoked only when every reference contained in the class gets out of
-											####### scope. Otherwise, perl will probably complain that you
-	}										####### still have running threads while exiting
+											
+		eval {
+											####### Just make sure everything gets tidy up before leaving
+			$_->kill('KILL');						####### if we make to catch up before the instance is gone. Note that this will
+											####### be invoked only when every reference contained in the class will be
+											####### destroied. Otherwise, perl will probably complain that you
+		};									####### still have running threads while exiting
+
+		eval {
+
+			$_->detach();							####### Try to detach, as last resort, if ever needed.
+		
+		};
+											
+	}									
 
 	return;
 

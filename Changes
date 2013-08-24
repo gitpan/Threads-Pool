@@ -2,3 +2,4 @@
 #    Rev.       : 0.3   - added thread signaling
 #    Rev.       : 0.4   - minor bug fixes and better code usability
 #    Rev.       : 0.5   - added the ability to have multiple pools within the same scope, each identified by its own CODE block
+#    Rev.       : 0.6   - code cleanup and improved capability to cleanly exit when called with older versions of perl. Avoided the need to have the arg of the CODEREF ( passed viai ->addToTheQueue ) being previously shared.

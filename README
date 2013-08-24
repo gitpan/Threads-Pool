@@ -48,7 +48,7 @@ METHODS
     by the threads. This must be an ARRAYREF to a previously SHARED array.
 
   "destroy()"
-    This method destroies the pool's instance, waiting for all the threads
+    This method destroys the pool's instance, waiting for all the threads
     to have their jobs done.
 
 SUPPORT
@@ -61,6 +61,5 @@ AUTHOR
 
 LICENSE INFORMATION
 This library is free software; you can redistribute it and/or modify it under 
-the terms of the can redistribute it and/or modify it under the terms of the
-GPL License 3.0. For details, see the full text of the license in the file 
-LICENSE.
+the terms of the GPL License 3.0. 
+For details, see the full text of the license in the file LICENSE.

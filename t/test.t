@@ -1,3 +1,16 @@
+BEGIN {
+
+	use Config;
+
+  	if (! $Config{'useithreads'}) {
+
+		print("1..0 # Skip: Perl not compiled with 'useithreads'\n");
+    		exit(0);
+  
+	}
+
+}
+
 use Test::Simple tests => 4;
 
 use Threads::Pool;
@@ -11,7 +24,7 @@ my $test = sub {
 
 };
 
-my @arg : shared;
+my @arg; 
 push( @arg, '1' );
 
 my $pool = Threads::Pool->getInstance( 1, $test, 0.1 );         		# test if we can create an object
