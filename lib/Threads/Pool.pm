@@ -29,19 +29,22 @@ C<Threads::Pool> - API to get a Pool of reusable threads
 =head1 SYNOPSIS
 
 	my $pool = Threads::Pool->getInstance( [[NUMBER OF THREADS, SUB CODEREF], WAIT SECONDS] );
+     or my $pool = Threads::Pool->getInstance( { [[ code => SUB CODEREF, threads => NUMBER OF THREADS ], wait =>  WAIT SECONDS ] } );
+        my $same_pool_as_the_ones_before = Threads::Pool->getInstance( SUB CODEREF );
 	$pool->addToTheQueue( \@array );
 	$pool->destroy();
 
 =head1 DESCRIPTION
 
 This class instances a pool of reusable threads, gives them a task, and then adds to a shared queue any $obj you want to give them to evaluate. 
-Your $obj MUST be shareable ( look for which kinds are allowed in perl's documentation ) and shared before being added to the queue, or at least 
-serialized, so that you can then deserialize it inside the SUB CODEREF you supplied, and put in an ARRAYREF ( mandatory ).
+Your $obj MUST be shareable ( all types but glob & coderef ), or at least serialized, so that you can then deserialize it inside the SUB CODEREF 
+you supplied, and put in an ARRAYREF ( mandatory ) which will be the arg of the ->addToTheQueue() method.
 You must also supply the number of threads you want to be run inside the pool at creation time.
 Optionally you can give a wait time for the threads to wait between executions of the coderef, defaults to 0.3 seconds.
 
-You can call the pool's instance from wherever in your code, passing as argument always the same CODEREF, as it's a static member of this class; 
-once the instance is created, every attempt to recreate it will just be ignored, so you need to destroy it ( via ->destroy() ) before doing it.
+You can call the pool's instance from wherever in your code, passing as argument always the same CODEREF, as it's a static member of this class
+( say like $pool->getInstance( CODEREF ) ).
+Once the instance is created, every attempt to recreate it will just be ignored, so you need to destroy it ( via ->destroy() ) before doing it.
 
 The pool can't give you any assurance that all the threads will get their jobs finished before exiting the main program, so you MUST ensure that they'll 
 have enough time to run ( if you care ). It's thus advisable that you destroy() the pool when you're done. Otherwise perl will most probably complain
@@ -52,13 +55,13 @@ Requires at least Perl 5.8.0 and the support to ithreads, with the presence of t
 
 =head1 METHODS
 
-=head2 C<getInstance( [[NUMBER OF THREADS, SUB CODEREF], WAIT SECONDS] )>
+=head2 C<getInstance( [[ SUB CODEREF, NUMBER OF THREADS ], WAIT SECONDS] ) or getInstance( { [[ code => SUB CODEREF, threads => NUMBER OF THREADS ], wait =>  WAIT SECONDS ] } )>
 
 This method returns the pool's instance, if already created, or creates it with arguments you pass;
 
 =head2 C<addToTheQueue( $obj )>
 
-This method lets you add the args you want to be passed to the coderef by the threads. This must be an ARRAYREF to a previously SHARED array.
+This method lets you add the args you want to be passed to the coderef by the threads. This must be an ARRAYREF to the array containing the args you want to be passed.
 
 =head2 C<destroy()>
 
@@ -67,12 +70,14 @@ This method destroys the pool's instance, waiting for all the threads to have th
 =cut
 
 use strict;
+use warnings;
+use diagnostics;
 use threads;
 use threads::shared;
 use Carp;
 use 5.8.0;
 
-our $VERSION = 0.6;
+our $VERSION = 1.0;
 
 my %instance;									####### Global instance which will be returned every time the constructor's called
 
@@ -118,7 +123,8 @@ my $_threadRun = sub {
 
 };
 
-my $usage = q/Usage: $obj = Threads::Pool->getInstance( [[<number_of_threads_you_want>, \&coderef_to_execute], thread_wait_time] )/;
+my $usage = q/Usage: $obj = Threads::Pool->getInstance( [[ \&coderef_to_execute, <number_of_threads_you_want> ], thread_wait_time] )
+		 or: $obj = Threads::Pool->getInstance( { [[ code => \&coderef_to_execute, threads => <number_of_threads_you_want>, ] wait => thread_wait_time ] } )/;
 
 ### Constructor/Singleton as pool manager
 #   This is the only method provided to access the pool. The very first time, you must give the number of threads to be run, and the CODEREF 
@@ -128,59 +134,116 @@ sub getInstance() {
 
 	my $job;
 
-	if ( scalar( @_ ) > 0 ) {
+	if ( scalar( @_ ) > 1 && ( ( ref( $_[ 1 ] ) eq 'HASH' ) || ( ref( $_[ 1 ] ) eq 'CODE' ) ) ) {
 
-		$job = $_[ 2 ] or croak "$usage";					####### Trick to get the $job identifier
+		if ( ref( $_[ 1 ] ) eq 'HASH' ) {
+			
+			my $input = $_[ 1 ];
+			
+			if ( ! $input->{ code } || ref( $input->{ code } ) ne 'CODE' ) {
+				
+				croak "$usage";
+				
+			}
+			
+			$job = $input->{ code };
+			
+			unless ( defined( $instance{ $job } ) ) {                     			####### This won't let the class complain if you try to pass 
+													####### a new number of threads to the constructor
+				my $class = shift;
+				
+				my $numberOfThreads = $input->{ threads } or croak "$usage";
+				croak "$usage" unless ( $numberOfThreads =~ m/^\d+$/ );         	####### Let's make sure we got the right arguments
 
-	}
+				my $waitTime = $input->{ wait } || '0.3';                                  	####### 0.3 seconds sounds a fair wait time for a few threads.
+				croak "$usage" unless ( $waitTime =~ /^[-]?\d+(?:[.]\d+)?$/ );		####### If you've got more work to do, decrease it.
+													####### Let's make sure we got the right arguments
 
-	unless ( defined( $instance{ $job } ) ) {                     			####### This won't let the class complain if you try to pass 
-											####### a new number of threads to the constructor
-		my $class = shift;
-		my $numberOfThreads = shift or croak "$usage";
-                croak "$usage" unless ( $numberOfThreads =~ m/^\d+$/ );         	####### Let's make sure we got the right arguments
+				$instance{ $job } = bless {}, $class;
 
-                $job = shift or croak "$usage";
-                croak "$usage" unless ( ref( $job ) eq 'CODE' );                	####### Let's make sure we got the right arguments
+				my @queue : shared;
+				my $sem : shared = 0;
+
+				$instance{ $job }->{ job } = $job;
+				$instance{ $job }->{ pool } = [];
+				$instance{ $job }->{ queue } = \@queue;
+				$instance{ $job }->{ sem } = \$sem;					###### Add a semaphore, just in case signaling is not functional
+				
+				for ( my $i = 0 ; $i < $numberOfThreads ; ++$i ) {
+
+					$instance{ $job }->{ pool }->[ $i ] =				####### Keep a reference to the created threads, so we can turn 
+						threads->create( 					####### them off later...
+									$_threadRun, 
+									$job, 
+									$instance{ $job }->{ queue }, 		 
+									$waitTime,
+									\$sem
+								); 				
+
+				}
+
+			}
 		
-                my $waitTime = shift || '0.3';                                  	####### 0.3 seconds sounds a fair wait time for a few threads.
-                                                                                	####### If you've got more work to do, decrease it.
-                croak "$usage" unless ( $waitTime =~ /^[-]?\d+(?:[.]\d+)?$/ );  	####### Let's make sure we got the right arguments
+		} else {
+			
+			$job = $_[ 1 ] or croak "$usage";						####### Trick to get the $job identifier
 
-		$instance{ $job } = bless {}, $class;
+			unless ( defined( $instance{ $job } ) ) {                     			####### This won't let the class complain if you try to pass 
+													####### a new number of threads to the constructor
+				my $class = shift;
+				
+				$job = shift or croak "$usage";
+				croak "$usage" unless ( ref( $job ) eq 'CODE' );                	####### Let's make sure we got the right arguments
+				
+				my $numberOfThreads = shift or croak "$usage";
+				croak "$usage" unless ( $numberOfThreads =~ m/^\d+$/ );         	####### Let's make sure we got the right arguments
 
-		my @queue : shared;
-		my $sem : shared = 0;
+				my $waitTime = shift || '0.3';                                  	####### 0.3 seconds sounds a fair wait time for a few threads.
+				croak "$usage" unless ( $waitTime =~ /^[-]?\d+(?:[.]\d+)?$/ );		####### If you've got more work to do, decrease it.
+													####### Let's make sure we got the right arguments
 
-		$instance{ $job }->{ job } = $job;
-		$instance{ $job }->{ pool } = [];
-		$instance{ $job }->{ queue } = \@queue;
-		$instance{ $job }->{ sem } = \$sem;					###### Add a semaphore, just in case signaling is not functional
-		
-		for ( my $i = 0 ; $i < $numberOfThreads ; ++$i ) {
+				$instance{ $job } = bless {}, $class;
 
-			$instance{ $job }->{ pool }->[ $i ] =				####### Keep a reference to the created threads, so we can turn 
-				threads->create( 					####### them off later...
-							$_threadRun, 
-							$job, 
-							$instance{ $job }->{ queue }, 		 
-							$waitTime,
-							\$sem
-						); 				
+				my @queue : shared;
+				my $sem : shared = 0;
+
+				$instance{ $job }->{ job } = $job;
+				$instance{ $job }->{ pool } = [];
+				$instance{ $job }->{ queue } = \@queue;
+				$instance{ $job }->{ sem } = \$sem;					###### Add a semaphore, just in case signaling is not functional
+				
+				for ( my $i = 0 ; $i < $numberOfThreads ; ++$i ) {
+
+					$instance{ $job }->{ pool }->[ $i ] =				####### Keep a reference to the created threads, so we can turn 
+						threads->create( 					####### them off later...
+									$_threadRun, 
+									$job, 
+									$instance{ $job }->{ queue }, 		 
+									$waitTime,
+									\$sem
+								); 				
+
+				}
+
+			}
 
 		}
+		
+		return $instance{ $job };
 
+	} else {
+		
+		croak "$usage";
+		
 	}
-
-	return $instance{ $job };
-
+	
 }
 
 ### End of constructor
 
 ### This method adds an argument for the task accomplished by threads to the internal queue of the pool. Everytime something gets 
 ### added, a thread will pick it up.
-### It requires that the argument be an ARRAYREF to a previously shared ARRAY as that's gonna work as input to the task of each thread
+### It requires that the argument be an ARRAYREF, as that's gonna work as input to the task of each thread
 ### 
 sub addToTheQueue( $ ) {
 
