@@ -40,7 +40,7 @@ This class instances a pool of reusable threads, gives them a task, and then add
 Your $obj MUST be shareable ( all types but glob & coderef ), or at least serialized, so that you can then deserialize it inside the SUB CODEREF 
 you supplied, and put in an ARRAYREF ( mandatory ) which will be the arg of the ->addToTheQueue() method.
 You must also supply the number of threads you want to be run inside the pool at creation time.
-Optionally you can give a wait time for the threads to wait between executions of the coderef, defaults to 0.3 seconds.
+Optionally you can give a wait time for the threads to wait between executions of the coderef, defaults to 0.3 seconds, expressed in integers or floats (absolute values).
 
 You can call the pool's instance from wherever in your code, passing as argument always the same CODEREF, as it's a static member of this class
 ( say like $pool->getInstance( CODEREF ) ).
@@ -55,7 +55,7 @@ Requires at least Perl 5.8.0 and the support to ithreads, with the presence of t
 
 =head1 METHODS
 
-=head2 C<getInstance( [[ SUB CODEREF, NUMBER OF THREADS ], WAIT SECONDS] ) or getInstance( { [[ code => SUB CODEREF, threads => NUMBER OF THREADS ], wait =>  WAIT SECONDS ] } )>
+=head2 C<getInstance( [[ SUB CODEREF, NUMBER OF THREADS ], WAIT SECONDS] ) or getInstance( { [[ code =\> SUB CODEREF, threads =\> NUMBER OF THREADS ], wait =\>  WAIT SECONDS ] } )>
 
 This method returns the pool's instance, if already created, or creates it with arguments you pass;
 
@@ -70,14 +70,12 @@ This method destroys the pool's instance, waiting for all the threads to have th
 =cut
 
 use strict;
-use warnings;
-use diagnostics;
 use threads;
 use threads::shared;
 use Carp;
 use 5.8.0;
 
-our $VERSION = 1.0;
+our $VERSION = 1.1;
 
 my %instance;									####### Global instance which will be returned every time the constructor's called
 
@@ -114,8 +112,8 @@ my $_threadRun = sub {
 
                 }
 
-                select( undef, undef, undef, $waitTime );
 		threads->yield();
+                select( undef, undef, undef, $waitTime );
 
         }
 
@@ -155,10 +153,10 @@ sub getInstance() {
 				my $numberOfThreads = $input->{ threads } or croak "$usage";
 				croak "$usage" unless ( $numberOfThreads =~ m/^\d+$/ );         	####### Let's make sure we got the right arguments
 
-				my $waitTime = $input->{ wait } || '0.3';                                  	####### 0.3 seconds sounds a fair wait time for a few threads.
+				my $waitTime = $input->{ wait } || '0.3';                               ####### 0.3 seconds sounds a fair wait time for a few threads.
 				croak "$usage" unless ( $waitTime =~ /^[-]?\d+(?:[.]\d+)?$/ );		####### If you've got more work to do, decrease it.
-													####### Let's make sure we got the right arguments
-
+				$waitTime =~ s/^[-]?//;							####### Let's make sure we got the right arguments 
+													####### Silently strip the possible minus sign
 				$instance{ $job } = bless {}, $class;
 
 				my @queue : shared;
@@ -200,8 +198,8 @@ sub getInstance() {
 
 				my $waitTime = shift || '0.3';                                  	####### 0.3 seconds sounds a fair wait time for a few threads.
 				croak "$usage" unless ( $waitTime =~ /^[-]?\d+(?:[.]\d+)?$/ );		####### If you've got more work to do, decrease it.
-													####### Let's make sure we got the right arguments
-
+				$waitTime =~ s/^[-]?//;							####### Let's make sure we got the right arguments
+													####### Silently strip the possible minus sign
 				$instance{ $job } = bless {}, $class;
 
 				my @queue : shared;
@@ -264,12 +262,25 @@ sub addToTheQueue( $ ) {
 
 	}
 
-	my @local_array : shared = @{ $item };
+	my $local_array;
+	
+	if ( $threads::shared::VERSION >= 1.21 ) {
+		
+		$local_array = shared_clone( $item );
 
-	if ( scalar( @local_array ) > 0 ) {
+	} else {
+		
+		share( $local_array );
+		my @local_array : shared = @{ $item };
+		$local_array = \@local_array;
+		
+	}
+
+	
+	if ( scalar( @{ $local_array } ) > 0 ) {
 
 		lock( $self->{ queue } );
-		push( @{ $self->{ queue } }, \@local_array );
+		push( @{ $self->{ queue } }, $local_array );
 
 	} else {
 
@@ -287,24 +298,32 @@ sub destroy() {
 
 	local $@;
 
-	while ( my $t = shift @{ $self->{ pool } } ) {
+	if ( $threads::VERSION >= 1.27 ) {
+		
+		while ( my $t = shift @{ $self->{ pool } } ) {
 
-		eval {
+			eval {
 
-			$t->kill('KILL');						####### Sending the KILL signal to the threads
-			$t->join();
+				$t->kill('KILL');						####### Sending the KILL signal to the threads
+				$t->join();
+	
+			};
 
-		};
+			if ( $@ ) {
 
-		if ( $@ ) {
+				$t->detach();								####### Will detach, if we couldn't signal
 
-			$t->detach();							####### Will detach, if we couldn't signal
+			}
 
 		}
-
+	
+	} else {
+				
+		${ $self->{ sem } } = 1;							####### We should be able to manually adjust everything...
+							
 	}
 
-	${ $self->{ sem } } = 1;                                                        ####### We should be able to manually adjust everything...
+	                                                        
 
 	eval {
 
