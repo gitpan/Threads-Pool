@@ -4,3 +4,6 @@
 #    Rev.       : 0.5   - added the ability to have multiple pools within the same scope, each identified by its own CODE block
 #    Rev.       : 0.6   - code cleanup and improved capability to cleanly exit when called with older versions of perl. Avoided the need to have the arg of the CODEREF ( passed viai ->addToTheQueue ) being previously shared.
 #    Rev.	: 1.0	- now accepts an hash of options as argument to the constructor. Changed the interface options' order, if using positional args.
+#    Rev.	: 1.1   - checks for threads::shared version in use, so that we might shared_clone() ( possibly more accurate ) the args to the CODEREF
+#			- checks for threads version in use, so that we might correctly sig-kill the threads or change the sempahore value
+#    Rev.	: 1.1.1	- maintainance release ( no code modifications )

@@ -75,7 +75,7 @@ use threads::shared;
 use Carp;
 use 5.8.0;
 
-our $VERSION = 1.1;
+our $VERSION = 1.1.1;
 
 my %instance;									####### Global instance which will be returned every time the constructor's called
 
@@ -122,7 +122,9 @@ my $_threadRun = sub {
 };
 
 my $usage = q/Usage: $obj = Threads::Pool->getInstance( [[ \&coderef_to_execute, <number_of_threads_you_want> ], thread_wait_time] )
-		 or: $obj = Threads::Pool->getInstance( { [[ code => \&coderef_to_execute, threads => <number_of_threads_you_want>, ] wait => thread_wait_time ] } )/;
+		 or: $obj = Threads::Pool->getInstance( { [[ code => \&coderef_to_execute, threads => <number_of_threads_you_want>, ] wait => thread_wait_time ] } )
+		 or: $obj = Threads::Pool->getInstance( { code => \&coderef_to_execute } )
+		 or: $obj = Threads::Pool->getInstance( \&coderef_to_execute )/;
 
 ### Constructor/Singleton as pool manager
 #   This is the only method provided to access the pool. The very first time, you must give the number of threads to be run, and the CODEREF 

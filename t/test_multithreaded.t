@@ -4,7 +4,7 @@ BEGIN {
 
   	if (! $Config{'useithreads'}) {
 
-		print("1..0 # Skip: Perl not compiled with 'useithreads'\n");
+		print("1..0 # Skip this test as Perl not compiled with 'useithreads'\n");
     		exit(0);
   
 	}

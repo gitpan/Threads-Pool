@@ -4,4 +4,5 @@ LICENSE
 Makefile.PL
 MANIFEST			This list of files
 README
-t/test.t
+t/test_multithreaded.t		Test in a multithreaded environment
+t/test_nonithreaded.t		Test in a non-threaded environment
