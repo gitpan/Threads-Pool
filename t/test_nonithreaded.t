@@ -4,12 +4,11 @@ use Test::Simple tests => 1;
 if (! $Config{'useithreads'}) {
 
 
-	ok( require Threads::Pool, "Test to load the module in non-threaded environment" );
-
+	ok( 1, "# Test only for non-threaded environments\n" );
+    	# exit(0);
+	
 } else {
 	
-	ok( 1, "# Skip this test cause it's only for non-threade environments\n" );
-	# print("1..1 # Skip this test cause it's only for non-threade environments\n");
-    	# exit(0);
+	ok( require Threads::Pool, "# Test only for non-threaded environments\n" );
 	
 }

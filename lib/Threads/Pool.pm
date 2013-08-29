@@ -75,7 +75,7 @@ use threads::shared;
 use Carp;
 use 5.8.0;
 
-our $VERSION = 1.1.1;
+our $VERSION = 1.1.2;
 
 my %instance;									####### Global instance which will be returned every time the constructor's called
 
@@ -349,23 +349,28 @@ sub destroy() {
 sub DESTROY {
 
 	my $self = shift;
-	
-	local $@;
+
 
 	for ( @{ $self->{ pool } } ) {
+			
+		if ( $threads::VERSION >= 1.27 ) {
 											
-		eval {
-											####### Just make sure everything gets tidy up before leaving
-			$_->kill('KILL');						####### if we make to catch up before the instance is gone. Note that this will
-											####### be invoked only when every reference contained in the class will be
-											####### destroied. Otherwise, perl will probably complain that you
-		};									####### still have running threads while exiting
+			eval {
+												####### Just make sure everything gets tidy up before leaving
+				$_->kill('KILL');						####### if we make to catch up before the instance is gone. Note that this will
+												####### be invoked only when every reference contained in the class will be
+												####### destroied. Otherwise, perl will probably complain that you
+			};									####### still have running threads while exiting
 
-		eval {
+		} else {
+			
+			eval {
 
-			$_->detach();							####### Try to detach, as last resort, if ever needed.
+				$_->detach();							####### Try to detach, as last resort, if ever needed.
+			
+			};
 		
-		};
+		}
 											
 	}									
 
